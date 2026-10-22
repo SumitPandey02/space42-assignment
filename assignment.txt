@@ -1,0 +1,45 @@
+Target Application: https://restful-booker.herokuapp.com
+Core Competency: Managing complex transactional states, API chaining under
+concurrency, idempotency validation, and handling shared-environment flakiness.
+Background & Challenge
+restful-booker is a shared public sandbox. In a real enterprise microservices environment,
+tests frequently fail due to shared state pollution, race conditions, and transient auth issues.
+Design an advanced, resilient automated test pipeline that executes a complex booking
+lifecycle while gracefully managing concurrency and data constraints.
+Detailed Requirements
+1. Advanced Authentication & Token Lifecycle Management
+• Dynamic Re-auth Simulation: Do not rely on a single static token. Implement an auth
+manager that checks token validity, handles token expiration, and dynamically triggers re-
+authentication if an unauthorized (401/403) response is intercepted mid-suite.
+• Concurrent Token Generation: Ensure that if multiple test threads execute parallel
+setup hooks, the token generation endpoint does not race or lock up.
+2. Complex Business Logic & Date-Range Validation Graph
+• Overlapping Bookings (Negative State Validation): Programmatically calculate check-
+in and check-out dates. Attempt to create a duplicate booking for the exact same room/date
+range using a second user context, and assert that the system rejects it with proper
+validation codes (e.g., 400 or 409 conflict, or appropriate sandbox behavior).
+• Deep Schema Contract & Invariant Validation: Validate that price calculations, deposit
+paid flags, and nested JSON structures (bookingdates object containing checkin and
+checkout) strictly conform to date-time formats and logical constraints (checkout >
+checkin).
+3. Idempotency & Safe Retry Mechanics
+• Idempotent Updates: Write a test verifying that sending the exact same PUT request
+payload three times consecutively yields an identical, successful state without side effects or
+escalating resource versions.
+• Partial Update Drift (PATCH): Send a PATCH request updating only a single field (e.g.,
+totalprice), and verify that all other unreferenced fields (such as firstname, lastname, and
+bookingdates) remain entirely untouched and uncorrupted.
+2
+4. Concurrency & Race Condition Contention (The "Senior" Test)
+• Simultaneous Modification: Write a concurrent test script (using async/threading)
+where two distinct threads attempt to modify the same booking ID with conflicting data at
+the exact same millisecond.
+• State Reconciliation: Assert how the system handles the collision (last-write-wins vs.
+optimistic locking failure) and verify that the final database state is deterministic and free of
+data corruption or partial payload merges.
+5. Fault-Tolerant Setup, Teardown, and Environment Isolation
+• Shared Sandbox Hygiene: Because the target app is a public sandbox where data can be
+modified or deleted by other users globally, your framework must include resilient failure
+recovery. If a GET or DELETE returns a 404 because another user purged the record, the
+test framework must handle it gracefully (e.g., auto-recreating the prerequisite state) rather
+than failing the entire pipeline due to dirty data.

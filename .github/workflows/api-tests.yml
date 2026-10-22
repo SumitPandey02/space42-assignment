@@ -1,0 +1,206 @@
+name: API automation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      api_mode:
+        description: Target mode
+        type: choice
+        options: [mock, real]
+        default: mock
+      api_env:
+        description: Named environment (real mode only)
+        type: choice
+        options: [sandbox, uat, prod]
+        default: prod
+      workers:
+        description: Parallel Playwright workers
+        type: choice
+        options: ["1", "2", "4", "8"]
+        default: "4"
+      grep:
+        description: Optional Playwright grep filter (e.g. @smoke)
+        type: string
+        default: ""
+
+concurrency:
+  group: api-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24"
+  CI: "true"
+  WORKERS: ${{ github.event.inputs.workers || '4' }}
+
+jobs:
+  quality:
+    name: Lint, format and types
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+
+  mock:
+    name: Mock contract, unit and core suites
+    needs: quality
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.api_mode == 'mock')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      API_MODE: mock
+      API_ENV: sandbox
+      LOG_LEVEL: info
+      GREP: ${{ github.event.inputs.grep }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+
+      - name: Run deterministic suites
+        run: |
+          if [ -n "$GREP" ]; then
+            npx playwright test --project=unit --project=enterprise --project=core --grep "$GREP"
+          else
+            npx playwright test --project=unit --project=enterprise --project=core
+          fi
+
+      - name: Generate Allure report
+        if: always()
+        run: npx allure generate ./allure-results -o ./allure-report --clean
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: allure-mock
+          path: allure-report
+          retention-days: 14
+
+      - name: Upload raw results and traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: diagnostics-mock
+          path: |
+            allure-results
+            test-results
+          retention-days: 7
+
+  real-prod:
+    name: Real sandbox (prod profile)
+    needs: quality
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.api_mode == 'real' && github.event.inputs.api_env == 'prod')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: prod
+    env:
+      API_MODE: real
+      API_ENV: prod
+      LOG_LEVEL: info
+      API_USERNAME: ${{ secrets.API_USERNAME }}
+      API_PASSWORD: ${{ secrets.API_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+
+      - name: Run core and sandbox-behaviour suites
+        run: npx playwright test --project=core --project=sandbox-behaviour
+
+      - name: Generate Allure report
+        if: always()
+        run: npx allure generate ./allure-results -o ./allure-report --clean
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: allure-real-prod
+          path: allure-report
+          retention-days: 14
+
+      - name: Upload raw results and traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: diagnostics-real-prod
+          path: |
+            allure-results
+            test-results
+          retention-days: 7
+
+  real-other:
+    name: Real environment (${{ github.event.inputs.api_env }})
+    needs: quality
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.api_mode == 'real' &&
+      github.event.inputs.api_env != 'prod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      API_MODE: real
+      API_ENV: ${{ github.event.inputs.api_env }}
+      BASE_URL: ${{ github.event.inputs.api_env == 'uat' && vars.UAT_BASE_URL || vars.BASE_URL }}
+      LOG_LEVEL: info
+      API_USERNAME: ${{ secrets.API_USERNAME }}
+      API_PASSWORD: ${{ secrets.API_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+
+      - name: Run core suite against the selected environment
+        run: npx playwright test --project=core
+
+      - name: Generate Allure report
+        if: always()
+        run: npx allure generate ./allure-results -o ./allure-report --clean
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: allure-real-${{ github.event.inputs.api_env }}
+          path: allure-report
+          retention-days: 14
+
+      - name: Upload raw results and traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: diagnostics-real-${{ github.event.inputs.api_env }}
+          path: |
+            allure-results
+            test-results
+          retention-days: 7
