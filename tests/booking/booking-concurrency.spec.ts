@@ -1,13 +1,14 @@
 import { test, expect } from '../../src/fixtures/api.fixture';
 import { runAtBarrier } from '../../src/utils/barrier';
-import type { BookingPatchInput } from '../../src/contracts/booking.schema';
+import { bookingSchema, type BookingPatchInput } from '../../src/contracts/booking.schema';
 
 interface TimedOutcome {
   readonly label: string;
   readonly status: number;
   readonly startedAt: number;
   readonly finishedAt: number;
-  readonly totalprice: number;
+  readonly totalprice: number | undefined;
+  readonly responseBody: unknown;
 }
 
 test.describe('conflicting concurrent updates @core @concurrency', () => {
@@ -31,13 +32,15 @@ test.describe('conflicting concurrent updates @core @concurrency', () => {
         const results = await runAtBarrier(
           contenders.map(({ label, patch }) => async (): Promise<TimedOutcome> => {
             const startedAt = performance.now();
-            const response = await bookingApi.patch(id, patch);
+            const response = await bookingApi.patchRaw(id, patch);
+            const parsed = bookingSchema.safeParse(response.json);
             return {
               label,
-              status: 200,
+              status: response.status,
               startedAt,
               finishedAt: performance.now(),
-              totalprice: response.totalprice,
+              totalprice: parsed.success ? parsed.data.totalprice : undefined,
+              responseBody: response.json,
             };
           }),
         );
@@ -45,6 +48,7 @@ test.describe('conflicting concurrent updates @core @concurrency', () => {
         observations.push(results);
         for (const result of results) {
           expect(result.status).toBe(200);
+          expect(result.totalprice).toBeDefined();
         }
 
         const final = await bookingApi.getById(id);
