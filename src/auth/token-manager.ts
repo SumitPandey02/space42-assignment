@@ -27,16 +27,11 @@ export interface TokenManagerOptions {
   /** Refresh threshold, measured from acquisition. */
   readonly ttlMs: number;
   readonly logger: Logger;
-  /** Injectable clock for deterministic expiry tests. */
-  readonly clock?: () => number;
 }
 
 export interface TokenManagerStats {
   readonly acquisitions: number;
   readonly cacheHits: number;
-  readonly invalidations: number;
-  readonly lastAcquiredAt: number | undefined;
-  readonly cachedTokenAgeMs: number | undefined;
 }
 
 interface CachedToken {
@@ -49,8 +44,6 @@ export class TokenManager {
   private inFlight: Promise<string> | undefined;
   private acquisitions = 0;
   private cacheHits = 0;
-  private invalidations = 0;
-  private readonly clock: () => number;
 
   constructor(private readonly options: TokenManagerOptions) {
     if (!Number.isFinite(options.ttlMs) || options.ttlMs <= 0) {
@@ -58,12 +51,11 @@ export class TokenManager {
         `Token TTL must be a positive number of milliseconds, received ${options.ttlMs}`,
       );
     }
-    this.clock = options.clock ?? Date.now;
   }
 
   /** Cached token when fresh, otherwise a (single-flight) refresh. */
-  async getToken(options: { forceRefresh?: boolean } = {}): Promise<string> {
-    if (options.forceRefresh !== true && this.cached !== undefined && !this.isStale(this.cached)) {
+  async getToken(): Promise<string> {
+    if (this.cached !== undefined && !this.isStale(this.cached)) {
       this.cacheHits += 1;
       return this.cached.token;
     }
@@ -91,9 +83,6 @@ export class TokenManager {
 
   /** Drop the cached token (e.g. after a 401). Does not cancel an in-flight refresh. */
   invalidate(): void {
-    if (this.cached !== undefined) {
-      this.invalidations += 1;
-    }
     this.cached = undefined;
     this.options.logger.warn('token invalidated');
   }
@@ -102,25 +91,18 @@ export class TokenManager {
     return {
       acquisitions: this.acquisitions,
       cacheHits: this.cacheHits,
-      invalidations: this.invalidations,
-      lastAcquiredAt: this.cached?.acquiredAt,
-      cachedTokenAgeMs: this.cached === undefined ? undefined : this.clock() - this.cached.acquiredAt,
     };
   }
 
-  get hasCachedToken(): boolean {
-    return this.cached !== undefined;
-  }
-
   private isStale(cached: CachedToken): boolean {
-    return this.clock() - cached.acquiredAt >= this.options.ttlMs;
+    return Date.now() - cached.acquiredAt >= this.options.ttlMs;
   }
 
   private async acquire(): Promise<string> {
     this.acquisitions += 1;
     try {
       const token = await this.options.fetcher.fetchToken(this.options.credentials);
-      this.cached = { token, acquiredAt: this.clock() };
+      this.cached = { token, acquiredAt: Date.now() };
       this.options.logger.info('token acquired', {
         totalAcquisitions: this.acquisitions,
         ttlMs: this.options.ttlMs,

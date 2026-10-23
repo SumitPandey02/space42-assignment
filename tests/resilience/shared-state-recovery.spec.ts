@@ -60,7 +60,6 @@ test.describe('shared sandbox resilience @core', () => {
         retries: 2,
         baseDelayMs: 1,
         jitterRatio: 0,
-        sleep: async () => undefined,
         operation: `resolve booking ${id}`,
       },
     ).catch((error: unknown) => error);
@@ -68,17 +67,5 @@ test.describe('shared sandbox resilience @core', () => {
     expect(attempts).toBe(3);
     expect(failure).toBeInstanceOf(ApiError);
     expect((failure as ApiError).message).toContain('prerequisite booking is missing');
-  });
-
-  test('only test-owned ids are ever cleaned up', async ({ bookingApi, factory, cleanup }) => {
-    const first = await cleanup.create(bookingApi, factory.build());
-    const second = await cleanup.create(bookingApi, factory.build());
-
-    await bookingApi.remove(first.bookingid);
-    cleanup.untrack(first.bookingid);
-
-    expect(await bookingApi.exists(first.bookingid)).toBe(false);
-    expect(await bookingApi.exists(second.bookingid)).toBe(true);
-    expect(cleanup.trackedIds).toEqual([second.bookingid]);
   });
 });

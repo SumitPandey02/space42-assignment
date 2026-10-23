@@ -2,7 +2,7 @@
 
 ## 60-second walkthrough
 
-"This is a Playwright + TypeScript API framework for the restful-booker booking lifecycle. It has two tiers: a core suite for auth, lifecycle, idempotency, PATCH drift, concurrency, resilience and adaptive host contracts; and a sandbox-behaviour suite that records the public host's quirks. Requests go through a small transport that owns retries and sanitised diagnostics; authentication is a token manager with caching, a TTL refresh threshold and single-flight refresh. Every response is validated with Zod, and every booking is created with unique data and cleaned up by ID. CI runs a smoke path on PRs and the full suite nightly."
+"This is a Playwright + TypeScript API framework for the restful-booker booking lifecycle. The core suite covers auth, lifecycle, idempotency, PATCH drift, concurrency, resilience and adaptive host contracts. Requests go through a small transport that owns retries and sanitised diagnostics; authentication is a token manager with caching, a TTL refresh threshold and single-flight refresh. Every response is validated with Zod, and every booking is created with unique data and cleaned up by ID. CI runs a smoke path on PRs and the full suite nightly."
 
 ## Why no mock or unit tier?
 
@@ -39,7 +39,7 @@ Repeated identical PUTs converge on the same state. The test sends the same payl
 
 ## Concurrency
 
-Two conflicting PATCHes are released through an `N`-party barrier and dispatched in one microtask batch. The test records start/finish times, statuses and bodies, then checks the final record is internally consistent with one contender. It avoids claiming a shared millisecond. Last-write-wins is the observed behaviour.
+Two conflicting PATCHes are released through a one-shot gate and dispatched concurrently. The test records start/finish times and statuses, then checks the final record is internally consistent with one contender. Last-write-wins is the observed behaviour.
 
 ## Adaptive contracts
 
@@ -75,8 +75,8 @@ Only IDs created by the current test are tracked. Teardown runs even on failure 
 ## CI/CD
 
 - Quality job: lint, Prettier check, typecheck.
-- Sandbox job: `@smoke` on push/PR with 2 workers; full core + behaviour nightly with 4.
-- Manual dispatch supports `sandbox`/`uat` with `BASE_URL` and scoped secrets.
+- Sandbox job: `@smoke` on push/PR with 2 workers; full core suite nightly with 4.
+- Manual dispatch supports smoke/full scope and worker count.
 - Allure reports and failure diagnostics uploaded as artifacts.
 - Node 24 only; Allure 3 needs no Java.
 
@@ -98,6 +98,6 @@ Only IDs created by the current test are tracked. Teardown runs even on failure 
 ## Demo path
 
 1. `npm run test:smoke` - auth and full booking lifecycle.
-2. `npm run test:api` - core + adaptive contracts + sandbox observations.
+2. `npm test` - core suite + adaptive contracts.
 3. Open Allure and show the `auth-capability`, `overlap-capability`, `etag-capability` attachments.
 4. Break one assertion intentionally to show the sanitised HTTP history attachment, then revert.

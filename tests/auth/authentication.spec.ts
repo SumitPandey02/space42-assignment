@@ -45,4 +45,18 @@ test.describe('authentication @core', () => {
     expect(created.bookingid).toBeGreaterThan(0);
     expect(created.booking.firstname).toBe(payload.firstname);
   });
+
+  test('concurrent getToken calls share a single-flight acquisition', async ({ tokenManager }) => {
+    tokenManager.invalidate();
+    const acquisitionsBefore = tokenManager.stats.acquisitions;
+    const [first, second, third] = await Promise.all([
+      tokenManager.getToken(),
+      tokenManager.getToken(),
+      tokenManager.getToken(),
+    ]);
+
+    expect(first).toBe(second);
+    expect(second).toBe(third);
+    expect(tokenManager.stats.acquisitions - acquisitionsBefore).toBe(1);
+  });
 });

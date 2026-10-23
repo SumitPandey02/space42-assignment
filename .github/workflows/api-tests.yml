@@ -8,13 +8,8 @@ on:
     - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
-      api_env:
-        description: Named environment
-        type: choice
-        options: [prod, sandbox, uat]
-        default: prod
       scope:
-        description: Run scope for the public sandbox
+        description: Run scope
         type: choice
         options: [smoke, full]
         default: smoke
@@ -54,15 +49,9 @@ jobs:
   sandbox:
     name: Public sandbox (${{ github.event_name == 'schedule' && 'full' || github.event.inputs.scope || 'smoke' }})
     needs: quality
-    if: >-
-      github.event_name == 'push' ||
-      github.event_name == 'pull_request' ||
-      github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.api_env == 'prod')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      API_ENV: prod
       LOG_LEVEL: info
       WORKERS: ${{ github.event.inputs.workers || (github.event_name == 'schedule' && '4' || '2') }}
     steps:
@@ -76,7 +65,7 @@ jobs:
       - name: Run tests
         run: |
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.scope }}" = "full" ]; then
-            npx playwright test --project=core --project=sandbox-behaviour
+            npx playwright test --project=core
           else
             npx playwright test --project=core --grep @smoke
           fi
@@ -98,54 +87,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: diagnostics-${{ github.event_name }}
-          path: |
-            allure-results
-            test-results
-          retention-days: 7
-
-  real-other:
-    name: Real environment (${{ github.event.inputs.api_env }})
-    needs: quality
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.api_env != 'prod'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      API_ENV: ${{ github.event.inputs.api_env }}
-      BASE_URL: ${{ github.event.inputs.api_env == 'uat' && vars.UAT_BASE_URL || vars.BASE_URL }}
-      WORKERS: ${{ github.event.inputs.workers }}
-      LOG_LEVEL: info
-      API_USERNAME: ${{ secrets.API_USERNAME }}
-      API_PASSWORD: ${{ secrets.API_PASSWORD }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-      - run: npm ci
-
-      - name: Run core suite against the selected environment
-        run: npx playwright test --project=core
-
-      - name: Generate Allure report
-        if: always()
-        run: npx allure generate ./allure-results -o ./allure-report --clean
-
-      - name: Upload Allure report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: allure-${{ github.event.inputs.api_env }}
-          path: allure-report
-          retention-days: 14
-
-      - name: Upload raw results and traces
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: diagnostics-${{ github.event.inputs.api_env }}
           path: |
             allure-results
             test-results

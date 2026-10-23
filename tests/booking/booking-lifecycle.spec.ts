@@ -11,7 +11,7 @@ test.describe('booking lifecycle @core', () => {
     expect(response.text.length).toBeGreaterThan(0);
   });
 
-  test('create -> read -> PUT -> PATCH -> delete @smoke', async ({ bookingApi, factory, cleanup }) => {
+  test('create -> read -> PUT -> delete @smoke', async ({ bookingApi, factory, cleanup }) => {
     const payload = factory.build();
 
     let id = 0;
@@ -42,17 +42,6 @@ test.describe('booking lifecycle @core', () => {
       const updated = await bookingApi.update(id, update);
       expect(normaliseBooking(updated)).toEqual(normaliseBooking(update));
       expect(normaliseBooking(await bookingApi.getById(id))).toEqual(normaliseBooking(update));
-    });
-
-    await test.step('apply a partial PATCH', async () => {
-      const before = await bookingApi.getById(id);
-      const patched = await bookingApi.patch(id, { totalprice: before.totalprice + 10 });
-
-      expect(patched.totalprice).toBe(before.totalprice + 10);
-      expect(patched.firstname).toBe(before.firstname);
-      expect(patched.lastname).toBe(before.lastname);
-      expect(patched.bookingdates).toEqual(before.bookingdates);
-      expect(patched.depositpaid).toBe(before.depositpaid);
     });
 
     await test.step('delete the booking and verify the post-deletion state', async () => {

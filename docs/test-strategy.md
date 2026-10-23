@@ -1,13 +1,8 @@
 # Test strategy
 
-## Two-tier model
+## Coverage model
 
-| Tier                 | Purpose                                                                                                            | Target                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------ |
-| `@core`              | Behaviour that must hold on any host: auth, lifecycle, idempotency, PATCH, concurrency, resilience, host contracts | Real host                |
-| `@sandbox-behaviour` | Quirks unique to the public sandbox                                                                                | Real public sandbox only |
-
-There is no offline unit tier and no mock. The brief asks for a test pipeline against the host; a local double was prototyped and removed to avoid maintaining a second API. What would have been unit-tested is either observable in the integration suite or documented as unobservable.
+The suite runs as a single `core` project against a real host. There is no offline unit tier and no mock. The brief asks for a test pipeline against the host; a local double was prototyped and removed to avoid maintaining a second API. What would have been unit-tested is either observable in the integration suite or documented as unobservable.
 
 ## Coverage by concern
 
@@ -16,8 +11,8 @@ There is no offline unit tier and no mock. The brief asks for a test pipeline ag
 - Valid credentials produce a token; bad credentials produce `{ reason }` with no token and HTTP 200.
 - A write succeeds with the managed token.
 - Tokens are cached and reused across tests in the same worker.
-- The manager refreshes after its TTL threshold, invalidates on a 401, refreshes single-flight, and leaves no stale token after a failed refresh.
-- 401 replay and 403 handling are implemented defensively but cannot be triggered on this host; the adaptive auth contract records that authentication is not enforced for writes.
+- Concurrent `getToken()` calls share one single-flight acquisition.
+- TTL refresh, 401 invalidation/replay and 403 handling are implemented defensively but cannot be triggered on this host; the adaptive auth contract records that authentication is not enforced for writes.
 
 ### Booking lifecycle
 
@@ -45,13 +40,12 @@ Any other status fails. The attached `*-capability` artifacts explain what the h
 
 ### Concurrency
 
-Two conflicting PATCHes are released through an `N`-party barrier and dispatched in one microtask batch. The test records per-request status, start/finish times and response bodies, then asserts:
+Two conflicting PATCHes are dispatched concurrently. The test records per-request status and timings, then asserts:
 
 - both writes succeed;
-- the final record is internally consistent with exactly one contender;
-- the dispatch delta is bounded.
+- the final record is internally consistent with exactly one contender.
 
-It does not claim a shared millisecond. Last-write-wins is the observed outcome on this host.
+Last-write-wins is the observed outcome on this host.
 
 ### Resilience
 
@@ -80,8 +74,8 @@ No hardcoded dates exist in the suite, so tests do not rot. Uniqueness prevents 
 
 ## Flake controls
 
-- `fullyParallel: true`; worker count from `WORKERS`, capped by the profile.
-- No sleeps for synchronisation; the barrier coordinates dispatch.
+- `fullyParallel: true`; worker count from `WORKERS`, capped at 4.
+- No sleeps for synchronisation; concurrent writes are released through a one-shot gate.
 - Retryable statuses use bounded exponential backoff with jitter.
 - Real-host POST create retries on explicit 5xx responses, never on ambiguous transport failures.
 - Token refresh is single-flight.
@@ -112,7 +106,6 @@ No hardcoded dates exist in the suite, so tests do not rot. Uniqueness prevents 
 ```bash
 npm run test:smoke        # fast @smoke path
 npm run test:core         # all core specs
-npm run test:behaviour    # public sandbox observations
-npm run test:api          # core + behaviour
+npm run test:api          # alias for the core project
 npm run test:concurrency  # race test only
 ```

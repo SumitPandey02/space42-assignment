@@ -56,10 +56,7 @@ export interface RequestSpec {
   readonly body?: unknown;
   readonly headers?: Record<string, string>;
   readonly query?: Record<string, string | number | boolean>;
-  readonly timeoutMs?: number;
-  readonly retry?: Partial<HttpRetryPolicy>;
   readonly operation?: string;
-  readonly signal?: AbortSignal;
 }
 
 export interface RawResponse {
@@ -164,7 +161,7 @@ export class HttpTransport {
    * what is expected (negative tests must be able to assert a 409).
    */
   async send(spec: RequestSpec): Promise<RawResponse> {
-    const policy: HttpRetryPolicy = { ...this.defaultRetry, ...spec.retry };
+    const policy = this.defaultRetry;
     const url = this.resolveUrl(spec.path, spec.query);
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -188,7 +185,6 @@ export class HttpTransport {
           error: context.error instanceof Error ? context.error.message : context.error,
         });
       },
-      ...(spec.signal === undefined ? {} : { signal: spec.signal }),
     };
 
     try {
@@ -236,7 +232,7 @@ export class HttpTransport {
       response = await this.request.fetch(url, {
         method: spec.method,
         headers,
-        timeout: spec.timeoutMs ?? this.requestTimeoutMs,
+        timeout: this.requestTimeoutMs,
         failOnStatusCode: false,
         ...(spec.body === undefined ? {} : { data: spec.body }),
       });

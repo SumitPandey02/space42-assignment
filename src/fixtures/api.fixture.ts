@@ -17,7 +17,7 @@
 
 import { request as playwrightRequest, test as base, expect, type APIRequestContext } from '@playwright/test';
 
-import { ENV, describeTarget } from '../../config/environment';
+import { ENV } from '../../config/environment';
 import { TokenManager } from '../auth/token-manager';
 import { BookingFactory } from '../builders/booking.factory';
 import { AuthClient } from '../clients/auth.client';
@@ -38,7 +38,6 @@ export interface CleanupTracker {
 
 interface TestFixtures {
   cleanup: CleanupTracker;
-  target: string;
 }
 
 interface WorkerFixtures {
@@ -149,13 +148,6 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       await use(new BookingFactory({ workerIndex: workerInfo.workerIndex }));
     },
     { scope: 'worker' },
-  ],
-
-  target: [
-    async ({}, use) => {
-      await use(describeTarget());
-    },
-    { scope: 'test' },
   ],
 
   cleanup: [

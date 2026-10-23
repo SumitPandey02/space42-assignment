@@ -132,20 +132,6 @@ export class BookingClient {
 
   // ----------------------------------------------------------------- update
 
-  async updateRaw(
-    id: number,
-    input: BookingUpdateInput,
-    options: RawWriteOptions = {},
-  ): Promise<RawResponse> {
-    const spec: Omit<RequestSpec, 'headers'> = {
-      method: 'PUT',
-      path: `/booking/${id}`,
-      body: input,
-      operation: `PUT /booking/${id}`,
-    };
-    return options.authenticated === false ? this.transport.send(spec) : this.authorizedSend(spec);
-  }
-
   async update(id: number, input: BookingUpdateInput): Promise<Booking> {
     const response = await this.authorizedSend(
       { method: 'PUT', path: `/booking/${id}`, body: input, operation: `PUT /booking/${id}` },
@@ -175,15 +161,6 @@ export class BookingClient {
   }
 
   // ----------------------------------------------------------------- delete
-
-  async deleteRaw(id: number, options: RawWriteOptions = {}): Promise<RawResponse> {
-    const spec: Omit<RequestSpec, 'headers'> = {
-      method: 'DELETE',
-      path: `/booking/${id}`,
-      operation: `DELETE /booking/${id}`,
-    };
-    return options.authenticated === false ? this.transport.send(spec) : this.authorizedSend(spec);
-  }
 
   async remove(id: number): Promise<void> {
     const response = await this.authorizedSend(

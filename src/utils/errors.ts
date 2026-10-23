@@ -111,32 +111,3 @@ export class RetryExhaustedError extends AppError {
     this.lastError = params.lastError;
   }
 }
-
-/** The resource disappeared and could not be re-established. */
-export class ReconciliationExhaustedError extends AppError {
-  readonly resourceId: string | number;
-  readonly attempts: number;
-
-  constructor(params: { resourceId: string | number; attempts: number; cause?: unknown }) {
-    super(
-      `Reconciliation failed for booking ${params.resourceId} after ${params.attempts} attempt(s); ` +
-        'the prerequisite resource could not be recreated or was purged again',
-      { cause: params.cause },
-    );
-    this.resourceId = params.resourceId;
-    this.attempts = params.attempts;
-  }
-}
-
-/** Convenience predicates used by retry/recovery policies. */
-export function isApiError(error: unknown): error is ApiError {
-  return error instanceof ApiError;
-}
-
-export function isNotFound(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 404;
-}
-
-export function isForbidden(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 403;
-}

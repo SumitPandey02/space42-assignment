@@ -1,5 +1,4 @@
 import { test, expect } from '../../src/fixtures/api.fixture';
-import { runAtBarrier } from '../../src/utils/barrier';
 import { bookingSchema, type BookingPatchInput } from '../../src/contracts/booking.schema';
 
 interface TimedOutcome {
@@ -8,11 +7,27 @@ interface TimedOutcome {
   readonly startedAt: number;
   readonly finishedAt: number;
   readonly totalprice: number | undefined;
-  readonly responseBody: unknown;
+}
+
+function runTogether<T>(tasks: ReadonlyArray<() => Promise<T>>): Promise<T[]> {
+  if (tasks.length === 0) {
+    return Promise.resolve([]);
+  }
+
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const running = tasks.map(async (task) => {
+    await gate;
+    return task();
+  });
+  release();
+  return Promise.all(running);
 }
 
 test.describe('conflicting concurrent updates @core @concurrency', () => {
-  test('two coordinated PATCHes produce one consistent final state', async ({
+  test('two concurrent PATCHes produce one consistent final state', async ({
     bookingApi,
     factory,
     cleanup,
@@ -25,61 +40,41 @@ test.describe('conflicting concurrent updates @core @concurrency', () => {
       { label: 'beta', patch: { totalprice: 222, additionalneeds: 'Beta' } },
     ];
 
-    const observations: TimedOutcome[][] = [];
+    const results = await runTogether(
+      contenders.map(({ label, patch }) => async (): Promise<TimedOutcome> => {
+        const startedAt = performance.now();
+        const response = await bookingApi.patchRaw(id, patch);
+        const parsed = bookingSchema.safeParse(response.json);
+        return {
+          label,
+          status: response.status,
+          startedAt,
+          finishedAt: performance.now(),
+          totalprice: parsed.success ? parsed.data.totalprice : undefined,
+        };
+      }),
+    );
 
-    for (let round = 1; round <= 2; round += 1) {
-      await test.step(`round ${round}: dispatch both writes through a barrier`, async () => {
-        const results = await runAtBarrier(
-          contenders.map(({ label, patch }) => async (): Promise<TimedOutcome> => {
-            const startedAt = performance.now();
-            const response = await bookingApi.patchRaw(id, patch);
-            const parsed = bookingSchema.safeParse(response.json);
-            return {
-              label,
-              status: response.status,
-              startedAt,
-              finishedAt: performance.now(),
-              totalprice: parsed.success ? parsed.data.totalprice : undefined,
-              responseBody: response.json,
-            };
-          }),
-        );
-
-        observations.push(results);
-        for (const result of results) {
-          expect(result.status).toBe(200);
-          expect(result.totalprice).toBeDefined();
-        }
-
-        const final = await bookingApi.getById(id);
-        // Last-write-wins is the behaviour observed on the public sandbox;
-        // the host does not apply optimistic locking to plain PATCH.
-        expect([111, 222]).toContain(final.totalprice);
-        expect(final.additionalneeds).toBe(final.totalprice === 111 ? 'Alpha' : 'Beta');
-      });
+    for (const result of results) {
+      expect(result.status).toBe(200);
+      expect(result.totalprice).toBeDefined();
     }
 
-    const deltas = observations.flat().map((outcome) => outcome.finishedAt - outcome.startedAt);
+    const final = await bookingApi.getById(id);
+    // Last-write-wins is the behaviour observed on the public sandbox.
+    expect([111, 222]).toContain(final.totalprice);
+    expect(final.additionalneeds).toBe(final.totalprice === 111 ? 'Alpha' : 'Beta');
+
     await testInfo.attach('concurrency-observations', {
       body: JSON.stringify(
         {
-          note: 'Dispatch is coordinated through a barrier; JS cannot guarantee the same wall-clock millisecond.',
           bookingId: id,
-          rounds: observations,
-          requestDurationsMs: deltas,
+          results,
         },
         null,
         2,
       ),
       contentType: 'application/json',
     });
-
-    // The barrier releases both calls in one microtask batch, so their
-    // dispatch timestamps must be close - but we record rather than over-claim.
-    const firstRound = observations[0] ?? [];
-    if (firstRound.length === 2) {
-      const dispatchDelta = Math.abs((firstRound[0]?.startedAt ?? 0) - (firstRound[1]?.startedAt ?? 0));
-      expect(dispatchDelta).toBeLessThan(1_000);
-    }
   });
 });

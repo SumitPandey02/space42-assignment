@@ -7,7 +7,7 @@
 
 import { mkdir, writeFile } from 'node:fs/promises';
 
-import { ENV, describeTarget } from '../../config/environment';
+import { ENV } from '../../config/environment';
 
 const RESULTS_DIR = process.env['ALLURE_RESULTS_DIR'] ?? 'allure-results';
 
@@ -15,9 +15,7 @@ export default async function globalSetup(): Promise<void> {
   await mkdir(RESULTS_DIR, { recursive: true });
 
   const environment = [
-    `Target=${describeTarget()}`,
-    `Environment=${ENV.env}`,
-    `BaseUrl=${ENV.baseUrl}`,
+    `Target=${ENV.baseUrl}`,
     `Workers=${ENV.workers}`,
     `RequestTimeoutMs=${ENV.requestTimeoutMs}`,
     `TokenTtlMs=${ENV.tokenTtlMs}`,

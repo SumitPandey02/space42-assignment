@@ -1,15 +1,10 @@
 /**
  * Playwright configuration.
  *
- * Projects are behaviour-oriented rather than folder-oriented:
- *   - `core`               lifecycle, authentication, contracts, idempotency,
- *                          concurrency and resilience against the real host
- *   - `sandbox-behaviour`  observations that are only meaningful on the real
- *                          public sandbox (auto-skipped elsewhere)
- *
- * Allure results are written to ./allure-results and rendered separately with
- * the Allure 3 CLI (`npm run allure:generate`). HTTP exchanges are attached on
- * failure by the fixture, which is our API equivalent of a trace.
+ * The suite runs against the real host. Allure results are written to
+ * ./allure-results and rendered separately with the Allure 3 CLI
+ * (`npm run allure:generate`). HTTP exchanges are attached on failure by the
+ * fixture, which is our API equivalent of a trace.
  */
 
 import { defineConfig } from '@playwright/test';
@@ -48,12 +43,6 @@ export default defineConfig({
     {
       name: 'core',
       testMatch: /tests\/(booking|auth|resilience|contracts)\/.*\.spec\.ts/,
-      grepInvert: /@sandbox-behaviour/,
-    },
-    {
-      name: 'sandbox-behaviour',
-      testMatch: /tests\/sandbox-behaviour\/.*\.spec\.ts/,
-      grep: /@sandbox-behaviour/,
     },
   ],
 });

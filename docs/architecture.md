@@ -27,17 +27,14 @@ Dependencies point downward. Tests never talk to `APIRequestContext` directly.
 
 `resolveEnvironment(source)` is a pure function; `ENV` is the process-wide result.
 
-Precedence: process env -> `.env` -> named profile -> defaults.
+Precedence: process env -> `.env` -> defaults.
 
-Profiles carry a base URL (empty means "must be supplied through `BASE_URL`") and a worker ceiling. The assessment target is registered as `prod` because it is the only concrete host supplied. `sandbox` and `uat` stay empty so they cannot silently hit the wrong host.
+`BASE_URL` defaults to the public restful-booker sandbox. Worker count is capped at 4 to stay polite on the shared host. Credentials default to the published demo values and must be supplied together when overridden.
 
 Configuration fails fast when:
 
-- a profile without a base URL is selected and `BASE_URL` is absent
 - credentials are half-provided
 - a base URL is malformed or non-HTTP
-
-The public sandbox credentials are defaults for the `prod` profile; they are published demo values, not secrets.
 
 ## Request lifecycle
 
@@ -110,7 +107,7 @@ Zod is the single source of truth:
 
 Worker scope: `apiContext`, `transport`, `authClient`, `tokenManager`, `bookingApi`, `factory`.
 
-Test scope: `cleanup` (auto) and `target`.
+Test scope: `cleanup` (auto).
 
 `BookingFactory`:
 
@@ -142,6 +139,6 @@ This is intentionally not a mock: it tests the real host and documents its capab
 ## Extension points
 
 - New endpoint: add a schema, a client method, and a raw variant for negative tests.
-- New environment: add a profile entry; supply `BASE_URL` and credentials at runtime.
+- New environment: supply `BASE_URL` and credentials at runtime.
 - New capability: extend the adaptive contract spec and record the outcome.
 - New auth scheme: implement `AuthTokenFetcher`; `TokenManager` stays unchanged.

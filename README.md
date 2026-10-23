@@ -16,7 +16,7 @@ No Java is required: Allure 3 is a pure Node CLI.
 ```bash
 npm ci
 npm run test:smoke      # fast @smoke path against the public sandbox
-npm run test:api        # core + sandbox-behaviour
+npm test                # full core suite
 npm run allure:generate
 npm run allure:open
 ```
@@ -27,42 +27,33 @@ Configuration is resolved once in `config/environment.ts` with this precedence:
 
 1. process environment (CI inputs, repository/environment variables, secrets)
 2. local `.env` (git-ignored)
-3. the named profile in `config/environments.ts`
-4. built-in defaults
+3. built-in defaults
 
 | Variable                        | Default              | Notes                                               |
 | ------------------------------- | -------------------- | --------------------------------------------------- |
-| `API_ENV`                       | `prod`               | `sandbox`, `uat`, `prod`                            |
-| `BASE_URL`                      | profile              | Required for `sandbox`/`uat`                        |
-| `API_USERNAME` / `API_PASSWORD` | public sandbox creds | Required together for non-prod targets              |
-| `WORKERS`                       | `4`                  | Capped by the profile                               |
+| `BASE_URL`                      | public sandbox URL   | Optional target override                            |
+| `API_USERNAME` / `API_PASSWORD` | public sandbox creds | Must be provided together                           |
+| `WORKERS`                       | `4`                  | Capped at 4 to stay polite on the shared host       |
 | `REQUEST_TIMEOUT_MS`            | `15000`              | Per-request timeout                                 |
 | `TOKEN_TTL_MS`                  | `600000`             | Local refresh threshold (the API exposes no expiry) |
 | `LOG_LEVEL`                     | `info`               | `debug`/`info`/`warn`/`error`/`silent`              |
-| `RUN_BEHAVIOUR_TESTS`           | auto                 | Enables sandbox observations outside `prod`         |
 
 Copy `.env.example` to `.env` for local overrides. Secrets are never committed.
 
-The assessment target is registered as `prod` because it is the only concrete host supplied. `sandbox` and `uat` are reserved names for dedicated environments; their empty base URLs force an explicit `BASE_URL` rather than silently hitting the wrong host.
+## Test project and tags
 
-## Test projects and tags
+| Project | Contents                                                                       | Target        |
+| ------- | ------------------------------------------------------------------------------ | ------------- |
+| `core`  | Auth, lifecycle, adaptive contracts, idempotency, PATCH, concurrency, recovery | Any real host |
 
-| Project             | Contents                                                                                  | Target                               |
-| ------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------ |
-| `core`              | Auth, lifecycle, adaptive contracts, idempotency, PATCH, filters, concurrency, resilience | Any real host                        |
-| `sandbox-behaviour` | Quirks unique to the public sandbox                                                       | Auto-skipped unless `prod` is public |
-
-Tags: `@core`, `@sandbox-behaviour`, `@smoke`, `@concurrency`.
+Tags: `@core`, `@smoke`, `@concurrency`.
 
 ```bash
-npm test                  # both projects
+npm test
 npm run test:core
-npm run test:behaviour
-npm run test:api          # core + behaviour
+npm run test:api          # alias for the core project
 npm run test:smoke
 npm run test:concurrency
-npm run test:sandbox      # future dedicated environment
-npm run test:uat
 ```
 
 ## Adaptive host-contract tests
@@ -78,21 +69,19 @@ npm run test:uat
 
 Any other status fails. This keeps the tests honest on a host that does not enforce enterprise rules, while automatically tightening when a future target does.
 
-`tests/sandbox-behaviour` documents the rest of the public host's quirks: `ping` returns 201, auth failures return HTTP 200 without a token, `roomid` is dropped, DELETE returns 201, non-numeric ids return 404, and `depositpaid` filtering is ignored.
-
 ## Architecture
 
 ```text
-config/            env resolution + named profiles
+config/            environment resolution (BASE_URL + optional credentials)
 src/contracts/     Zod schemas (runtime validation + inferred types)
 src/models/        domain projections/normalisation
 src/clients/       HttpTransport, AuthClient, BookingClient
 src/auth/          TokenManager (cache, TTL, single-flight, invalidation)
 src/builders/      BookingFactory (unique data, relative dates)
 src/fixtures/      Playwright fixtures + cleanup tracker
-src/utils/         errors, retry, barrier, dates, logger, sanitizer
+src/utils/         errors, retry, dates, logger, sanitizer
 src/reporting/     Allure environment/executor metadata
-tests/             core (auth, booking, contracts, resilience) and sandbox observations
+tests/             auth, booking, contracts, resilience
 ```
 
 Request path:
@@ -125,23 +114,25 @@ If an enterprise target is added later, a contract double can be reintroduced un
 ## Allure 3
 
 ```bash
-npm run test:api
+npm run clean:allure      # remove stale raw results and previous report
+npm test
 npm run allure:generate   # ./allure-results -> ./allure-report
 npm run allure:open
 npm run allure:serve
 ```
 
-Each run writes `environment.properties` (target, environment, workers, run id, Node) and, in CI, `executor.json`.
+`allure:generate --clean` cleans only the report output. Run `clean:allure` first when you want a report that contains only the latest test run.
+
+Each run writes `environment.properties` (target, workers, run id, Node) and, in CI, `executor.json`.
 
 ## CI/CD
 
 `.github/workflows/api-tests.yml`:
 
 - **quality** — lint, Prettier check and typecheck on every push/PR
-- **sandbox** — `@smoke` on pushes and PRs with 2 workers; full core + behaviour nightly at `06:00 UTC` or on manual dispatch; Allure and failure diagnostics uploaded
-- **real-other** — manual dispatch against a dedicated `sandbox`/`uat` host using `vars.BASE_URL` / `vars.UAT_BASE_URL` and scoped secrets
+- **sandbox** — `@smoke` on pushes and PRs with 2 workers; full core suite nightly at `06:00 UTC` or on manual dispatch; Allure and failure diagnostics uploaded
 
-The public sandbox needs no secrets or approval gate because its credentials are published demo values. Dedicated environments should use environment-scoped secrets.
+The public sandbox needs no secrets or approval gate because its credentials are published demo values.
 
 ## Verified API behaviour
 

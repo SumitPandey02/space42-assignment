@@ -46,15 +46,3 @@ export function normaliseBooking(booking: Booking): NormalisedBooking {
     ...(additionalneeds === undefined ? {} : { additionalneeds }),
   };
 }
-
-/** Fields that a PATCH is allowed to modify without touching anything else. */
-export const MUTABLE_BOOKING_FIELDS = [
-  'firstname',
-  'lastname',
-  'totalprice',
-  'depositpaid',
-  'bookingdates',
-  'additionalneeds',
-] as const;
-
-export type MutableBookingField = (typeof MUTABLE_BOOKING_FIELDS)[number];
