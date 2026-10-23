@@ -52,8 +52,8 @@ test.describe('conflicting concurrent updates @core @concurrency', () => {
         }
 
         const final = await bookingApi.getById(id);
-        // Last-write-wins is the only behaviour the sandbox documents; the
-        // enterprise mock does not add optimistic locking to plain PATCH.
+        // Last-write-wins is the behaviour observed on the public sandbox;
+        // the host does not apply optimistic locking to plain PATCH.
         expect([111, 222]).toContain(final.totalprice);
         expect(final.additionalneeds).toBe(final.totalprice === 111 ? 'Alpha' : 'Beta');
       });

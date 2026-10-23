@@ -31,8 +31,7 @@ const bookingBaseSchema = z.object({
   additionalneeds: z.string().optional(),
   /**
    * Optional on purpose: the public sandbox accepts `roomid` on write but
-   * silently drops it, so it is absent from every subsequent GET. The mock
-   * honours it (needed for the enterprise overlap rule).
+   * silently drops it, so it is absent from every subsequent GET.
    */
   roomid: z.number().int().positive().optional(),
 });

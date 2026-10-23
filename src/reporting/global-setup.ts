@@ -16,7 +16,6 @@ export default async function globalSetup(): Promise<void> {
 
   const environment = [
     `Target=${describeTarget()}`,
-    `Mode=${ENV.mode}`,
     `Environment=${ENV.env}`,
     `BaseUrl=${ENV.baseUrl}`,
     `Workers=${ENV.workers}`,

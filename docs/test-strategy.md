@@ -1,78 +1,61 @@
 # Test strategy
 
-## Tier model
+## Two-tier model
 
-| Tier                 | Purpose                                        | Target             | Network  |
-| -------------------- | ---------------------------------------------- | ------------------ | -------- |
-| `@unit`              | Pure logic and contracts                       | none               | none     |
-| `@enterprise`        | Rules a real enterprise API must have          | deterministic mock | loopback |
-| `@core`              | Booking behaviour that should hold on any host | mock or real       | yes      |
-| `@sandbox-behaviour` | Documented quirks of the public host           | real `prod` only   | yes      |
+| Tier                 | Purpose                                                                                                            | Target                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------ |
+| `@core`              | Behaviour that must hold on any host: auth, lifecycle, idempotency, PATCH, concurrency, resilience, host contracts | Real host                |
+| `@sandbox-behaviour` | Quirks unique to the public sandbox                                                                                | Real public sandbox only |
 
-The split exists because the public sandbox is a shared, permissive demo:
-
-- it does not enforce authentication
-- it allows overlapping bookings
-- it has no ETags or optimistic locking
-- it returns `500` for missing fields and `405` for unknown ids
-- it silently drops `roomid`
-
-Asserting enterprise behaviour there would either fail or, worse, pass for the wrong reason. Unit and mock tiers stay deterministic and offline; core tests are written against the documented happy path; sandbox observations are quarantined and labelled.
+There is no offline unit tier and no mock. The brief asks for a test pipeline against the host; a local double was prototyped and removed to avoid maintaining a second API. What would have been unit-tested is either observable in the integration suite or documented as unobservable.
 
 ## Coverage by concern
 
 ### Authentication
 
 - Valid credentials produce a token; bad credentials produce `{ reason }` with no token and HTTP 200.
-- Token reuse: repeated `getToken()` calls acquire once.
-- TTL: an injected clock proves refresh at the threshold.
-- Single-flight: eight concurrent callers produce one acquisition.
-- Refresh failure: no cached token, no permanently rejected promise; the next call recovers.
-- 401 mid-suite: a token is expired server-side; a typed write refreshes once and replays successfully.
-- 403: viewer writes are rejected and do not trigger refresh.
+- A write succeeds with the managed token.
+- Tokens are cached and reused across tests in the same worker.
+- The manager refreshes after its TTL threshold, invalidates on a 401, refreshes single-flight, and leaves no stale token after a failed refresh.
+- 401 replay and 403 handling are implemented defensively but cannot be triggered on this host; the adaptive auth contract records that authentication is not enforced for writes.
 
 ### Booking lifecycle
 
 Create -> read -> PUT replace -> PATCH merge -> delete -> verify gone. Every step validates the body with Zod and compares normalised state, so extra/missing fields are caught.
 
-Post-deletion status is context-sensitive: the sandbox answers `405` to DELETE of an unknown id and `404` to GET; the mock uses `404` for both. Tests accept only "not found" semantics and never invent a resource version.
+Post-deletion status is context-sensitive: hosts differ between 403, 404 and 405. Tests accept only "not found" semantics and never invent a resource version.
 
-### Validation and invariants
+### Adaptive host contracts
 
-- ISO calendar validity: `2027-02-29` and `2026-02-30` are rejected (no JavaScript roll-over).
-- Checkout strictly after check-in, including PATCH and PUT.
-- Required fields, primitive types, positive `roomid`.
-- Response schemas validated for every read and write.
+Each contract accepts the legitimate outcome set and records the observed one:
+
+- **Authentication:** rejected with 401/403, or accepted. If accepted, the booking must be readable; if rejected, no record may be found by its unique name.
+- **Overlap:** rejected with 400/409/422 and no phantom record, or accepted with two distinct IDs that both exist.
+- **Optimistic locking:** ETag enforced -> stale `If-Match` is 412 and the record is unchanged, current `If-Match` is 200 with a new ETag; ETag absent or unenforced -> `If-Match` is ignored and the update succeeds.
+- **Validation:** missing fields -> 400/422/500, malformed JSON -> 400, unknown GET -> 404, unknown DELETE -> 404/405.
+
+Any other status fails. The attached `*-capability` artifacts explain what the host did.
 
 ### Idempotency and retry safety
 
 - The same complete PUT is sent three times; each response and persisted state must match.
 - PATCH changes only `totalprice`; names, dates, deposit flag and additional needs are asserted unchanged.
-- The HTTP transport retries only what is safe: GET/PUT/PATCH/DELETE transport failures and the retryable status set. POST is never replayed after an ambiguous network failure.
-- Retry diagnostics are logged per attempt; exhaustion returns the final server response when one exists.
+- The transport retries only replay-safe operations and retryable statuses. POST is never replayed after an ambiguous network failure.
+- Retry exhaustion returns the final server response when one exists.
 
 ### Concurrency
 
-Two conflicting PATCHes are released through an `N`-party barrier and dispatched in one microtask batch. The test records:
+Two conflicting PATCHes are released through an `N`-party barrier and dispatched in one microtask batch. The test records per-request status, start/finish times and response bodies, then asserts:
 
-- per-request start/finish timestamps
-- status codes
-- final state
+- both writes succeed;
+- the final record is internally consistent with exactly one contender;
+- the dispatch delta is bounded.
 
-It asserts only what can be substantiated: both writes succeed, the final record is internally consistent with exactly one contender, and dispatch delta is bounded. It does not claim a shared millisecond. Last-write-wins is the documented outcome; the mock does not add locking to plain PATCH.
+It does not claim a shared millisecond. Last-write-wins is the observed outcome on this host.
 
-### Search filters
+### Resilience
 
-Only `firstname` and `lastname` are asserted on the core path. They work on both the sandbox and the mock.
-
-Observed sandbox deviations (documented, not asserted as enterprise truth):
-
-- `depositpaid` is ignored (a `false` filter returns a deposit-paid booking).
-- `checkin`/`checkout` do not behave as exact matches; combining them with a unique name can return zero results for a booking that exists. The core suite therefore avoids relying on date filters.
-
-### Shared-state resilience
-
-- A booking deleted by another actor (or purged) is treated as gone, not as a framework failure.
+- A booking deleted by another actor is treated as gone, not as a framework failure.
 - Recovery recreates the prerequisite with fresh test-owned data.
 - Bounded retries surface the last actionable error; they never hang.
 - Cleanup only deletes IDs created by the current test.
@@ -94,17 +77,27 @@ No hardcoded dates exist in the suite, so tests do not rot. Uniqueness prevents 
 - `cleanup.create()` registers the ID immediately after a successful create.
 - Explicit deletes call `untrack` to avoid a second delete.
 - Teardown runs even after failure and only for tracked IDs.
-- The mock is reset-capable but tests normally rely on unique rooms rather than global reset, so parallel workers do not interfere.
 
 ## Flake controls
 
-- `fullyParallel: true`; worker count from `WORKERS`, capped per profile.
+- `fullyParallel: true`; worker count from `WORKERS`, capped by the profile.
 - No sleeps for synchronisation; the barrier coordinates dispatch.
-- Retryable server statuses use bounded exponential backoff with jitter.
-- Real-host POST create retries on explicit 5xx responses (the write may not have been applied), but never on ambiguous transport failures.
-- Token refresh is single-flight, so parallel hooks do not race `/auth`.
+- Retryable statuses use bounded exponential backoff with jitter.
+- Real-host POST create retries on explicit 5xx responses, never on ambiguous transport failures.
+- Token refresh is single-flight.
 - Failure-only diagnostics: sanitised HTTP exchange history attached to Allure.
-- Retries in CI: one retry; local: zero.
+- CI retries: one retry for smoke/full runs; local: zero.
+
+## Known host deviations (documented, not assumed)
+
+- `ping` returns 201.
+- Bad credentials return 200 without a token.
+- `POST /booking` returns 200; DELETE returns 201.
+- `roomid` is silently dropped.
+- Missing fields return 500.
+- Unknown ids return 405 on DELETE/PUT/PATCH.
+- `depositpaid` filtering is ignored.
+- `checkin`/`checkout` filters are not reliable exact matches; the core suite avoids depending on them.
 
 ## What is intentionally not tested
 
@@ -112,14 +105,14 @@ No hardcoded dates exist in the suite, so tests do not rot. Uniqueness prevents 
 - No invented version fields or idempotency keys.
 - No distributed token lock across workers or jobs.
 - No destructive operations on records the test did not create.
+- No mock or unit tier; see README for the rationale.
 
 ## Running
 
 ```bash
-npm run test:unit                 # offline, fastest feedback
-npm run test:mock                 # enterprise + core, hermetic
-npm run test:core                 # same core suite on the configured target
-npm run test:prod                 # real prod + sandbox observations
-npm run test:smoke                # cross-project smoke selection
-npm run test:concurrency          # race test only
+npm run test:smoke        # fast @smoke path
+npm run test:core         # all core specs
+npm run test:behaviour    # public sandbox observations
+npm run test:api          # core + behaviour
+npm run test:concurrency  # race test only
 ```

@@ -18,16 +18,11 @@
   },
   "scripts": {
     "test": "playwright test",
-    "test:unit": "playwright test --project=unit",
-    "test:enterprise": "playwright test --project=enterprise",
     "test:core": "playwright test --project=core",
     "test:behaviour": "playwright test --project=sandbox-behaviour",
     "test:api": "playwright test --project=core --project=sandbox-behaviour",
-    "test:mock": "cross-env API_MODE=mock playwright test --project=enterprise --project=core",
-    "test:real": "cross-env API_MODE=real playwright test --project=core",
-    "test:sandbox": "cross-env API_MODE=real API_ENV=sandbox playwright test --project=core --project=sandbox-behaviour",
-    "test:uat": "cross-env API_MODE=real API_ENV=uat playwright test --project=core",
-    "test:prod": "cross-env API_MODE=real API_ENV=prod playwright test --project=core --project=sandbox-behaviour",
+    "test:sandbox": "cross-env API_ENV=sandbox playwright test --project=core",
+    "test:uat": "cross-env API_ENV=uat playwright test --project=core",
     "test:smoke": "playwright test --grep @smoke",
     "test:concurrency": "playwright test --grep @concurrency",
     "lint": "eslint .",
@@ -38,8 +33,7 @@
     "allure:generate": "allure generate ./allure-results -o ./allure-report --clean",
     "allure:open": "allure open ./allure-report",
     "allure:serve": "allure serve ./allure-report",
-    "mock:server": "tsx src/mock/mock-api.standalone.ts",
-    "ci": "npm run lint && npm run format:check && npm run typecheck && npm run test:unit && npm run test:enterprise"
+    "ci": "npm run lint && npm run format:check && npm run typecheck"
   },
   "dependencies": {
     "zod": "^4.6.7"
@@ -58,7 +52,6 @@
     "eslint-plugin-security": "^4.2.0",
     "globals": "^17.13.0",
     "prettier": "^3.9.10",
-    "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.0"
   }

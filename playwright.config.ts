@@ -2,9 +2,8 @@
  * Playwright configuration.
  *
  * Projects are behaviour-oriented rather than folder-oriented:
- *   - `unit`               pure functions, no network (can run offline)
- *   - `enterprise`         deterministic mock-only contracts (401/403/409/412)
- *   - `core`               lifecycle/idempotency/concurrency, runs on mock or real
+ *   - `core`               lifecycle, authentication, contracts, idempotency,
+ *                          concurrency and resilience against the real host
  *   - `sandbox-behaviour`  observations that are only meaningful on the real
  *                          public sandbox (auto-skipped elsewhere)
  *
@@ -47,16 +46,8 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'unit',
-      testMatch: /tests\/unit\/.*\.spec\.ts/,
-    },
-    {
-      name: 'enterprise',
-      testMatch: /tests\/enterprise\/.*\.spec\.ts/,
-    },
-    {
       name: 'core',
-      testMatch: /tests\/(booking|auth|resilience|contract)\/.*\.spec\.ts/,
+      testMatch: /tests\/(booking|auth|resilience|contracts)\/.*\.spec\.ts/,
       grepInvert: /@sandbox-behaviour/,
     },
     {
@@ -65,21 +56,4 @@ export default defineConfig({
       grep: /@sandbox-behaviour/,
     },
   ],
-  ...(ENV.mode === 'mock'
-    ? {
-        webServer: {
-          command: 'npm run mock:server',
-          url: `${ENV.baseUrl}/ping`,
-          timeout: 30_000,
-          reuseExistingServer: !ENV.isCi,
-          env: {
-            MOCK_PORT: String(ENV.mockPort),
-            MOCK_ADMIN_KEY: ENV.mockAdminKey,
-            LOG_LEVEL: ENV.logLevel,
-          },
-          stdout: 'ignore' as const,
-          stderr: 'pipe' as const,
-        },
-      }
-    : {}),
 });

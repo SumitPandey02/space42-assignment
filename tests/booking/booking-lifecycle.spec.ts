@@ -60,7 +60,7 @@ test.describe('booking lifecycle @core', () => {
       cleanup.untrack(id);
 
       const after = await bookingApi.getRaw(id);
-      // Sandbox: 403 for unknown ids. Enterprise mock: 404. Both mean "gone".
+      // Hosts differ between 403/404 for unknown ids; both mean "gone".
       expect([403, 404]).toContain(after.status);
       expect(await bookingApi.exists(id)).toBe(false);
     });

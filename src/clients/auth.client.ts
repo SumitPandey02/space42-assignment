@@ -2,8 +2,8 @@
  * POST /auth client.
  *
  * Implements `AuthTokenFetcher` so the token manager depends on an interface,
- * not on this concrete class (dependency inversion). That also lets unit tests
- * inject a scripted fetcher without any HTTP at all.
+ * not on this concrete class (dependency inversion), which keeps token
+ * lifecycle code independent of HTTP.
  */
 
 import type { Credentials } from '../../config/environment';

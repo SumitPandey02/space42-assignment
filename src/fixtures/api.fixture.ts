@@ -18,15 +18,12 @@
 import { request as playwrightRequest, test as base, expect, type APIRequestContext } from '@playwright/test';
 
 import { ENV, describeTarget } from '../../config/environment';
-import { MOCK_DEFAULTS } from '../../config/environments';
 import { TokenManager } from '../auth/token-manager';
 import { BookingFactory } from '../builders/booking.factory';
 import { AuthClient } from '../clients/auth.client';
 import { BookingClient } from '../clients/booking.client';
 import { HttpTransport } from '../clients/http-client';
-import { MockControlClient } from '../clients/mock-control.client';
 import type { BookingCreateInput, BookingResponse } from '../contracts/booking.schema';
-import type { Credentials } from '../../config/environment';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('fixtures');
@@ -51,9 +48,6 @@ interface WorkerFixtures {
   tokenManager: TokenManager;
   bookingApi: BookingClient;
   factory: BookingFactory;
-  viewerTokenManager: TokenManager;
-  viewerBookingApi: BookingClient;
-  mockControl: MockControlClient;
 }
 
 function createTransport(context: APIRequestContext): HttpTransport {
@@ -153,39 +147,6 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   factory: [
     async ({}, use, workerInfo) => {
       await use(new BookingFactory({ workerIndex: workerInfo.workerIndex }));
-    },
-    { scope: 'worker' },
-  ],
-
-  viewerTokenManager: [
-    async ({ authClient }, use) => {
-      // Only meaningful in mock mode; real hosts do not have this identity.
-      const viewerCredentials: Credentials = {
-        username: MOCK_DEFAULTS.viewerUsername,
-        password: MOCK_DEFAULTS.viewerPassword,
-      };
-      await use(
-        new TokenManager({
-          fetcher: authClient,
-          credentials: viewerCredentials,
-          ttlMs: ENV.tokenTtlMs,
-          logger,
-        }),
-      );
-    },
-    { scope: 'worker' },
-  ],
-
-  viewerBookingApi: [
-    async ({ transport, viewerTokenManager }, use) => {
-      await use(new BookingClient(transport, viewerTokenManager, logger));
-    },
-    { scope: 'worker' },
-  ],
-
-  mockControl: [
-    async ({ transport }, use) => {
-      await use(new MockControlClient(transport, ENV.mockAdminKey));
     },
     { scope: 'worker' },
   ],

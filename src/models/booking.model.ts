@@ -27,7 +27,7 @@ export type {
   BookingUpdateInput,
 };
 
-/** Booking without the (sandbox-dropped, mock-honoured) `roomid` field. */
+/** Booking without the environment-specific `roomid` field. */
 export type NormalisedBooking = Omit<Booking, 'roomid'>;
 
 /**

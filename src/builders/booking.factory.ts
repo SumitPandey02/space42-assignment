@@ -22,7 +22,7 @@ import { Sequence, uniqueName } from '../utils/run-id';
 
 export interface BookingFactoryOptions {
   readonly workerIndex: number;
-  /** Anchor for relative dates; injected in unit tests for determinism. */
+  /** Anchor for relative dates; injectable for deterministic date windows. */
   readonly from?: Date;
 }
 

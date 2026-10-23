@@ -16,11 +16,8 @@ import { z } from 'zod';
 
 import {
   ENVIRONMENTS,
-  MAX_MOCK_WORKERS,
-  MOCK_DEFAULTS,
   PUBLIC_SANDBOX_CREDENTIALS,
   type ApiEnv,
-  type ApiMode,
   type EnvironmentProfile,
 } from './environments';
 import { ConfigurationError } from '../src/utils/errors';
@@ -43,8 +40,7 @@ const optionalInt = (min: number, max: number) =>
 const optionalText = (schema: z.ZodString) => z.preprocess(emptyToUndefined, schema.optional());
 
 const rawEnvironmentSchema = z.object({
-  API_MODE: z.enum(['real', 'mock']).default('mock'),
-  API_ENV: z.enum(['sandbox', 'uat', 'prod']).default('sandbox'),
+  API_ENV: z.enum(['sandbox', 'uat', 'prod']).default('prod'),
   BASE_URL: optionalText(z.string().trim().min(1)),
   API_USERNAME: optionalText(z.string().trim().min(1)),
   API_PASSWORD: optionalText(z.string().min(1)),
@@ -53,8 +49,6 @@ const rawEnvironmentSchema = z.object({
   TOKEN_TTL_MS: optionalInt(1_000, 86_400_000),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).optional(),
   RUN_BEHAVIOUR_TESTS: z.enum(['true', 'false']).optional(),
-  MOCK_PORT: optionalInt(1024, 65_535),
-  MOCK_ADMIN_KEY: optionalText(z.string().min(1)),
   CI: z.string().optional(),
 });
 
@@ -64,13 +58,10 @@ export interface Credentials {
 }
 
 export interface AppEnvironment {
-  readonly mode: ApiMode;
   readonly env: ApiEnv;
   readonly profile: EnvironmentProfile;
-  /** Always resolved: the named profile, BASE_URL, or the loopback mock URL. */
+  /** Always resolved: the named profile or an explicit BASE_URL. */
   readonly baseUrl: string;
-  readonly mockPort: number;
-  readonly mockAdminKey: string;
   readonly credentials: Credentials;
   /** Effective worker count after the profile cap is applied. */
   readonly workers: number;
@@ -79,7 +70,6 @@ export interface AppEnvironment {
   readonly tokenTtlMs: number;
   readonly logLevel: LogLevel;
   readonly isCi: boolean;
-  readonly isMock: boolean;
   readonly runId: string;
   /** True when `@sandbox-behaviour` specs are allowed to execute. */
   readonly runBehaviourTests: boolean;
@@ -103,7 +93,7 @@ function assertHttpUrl(value: string, context: string): string {
 }
 
 /**
- * Pure resolver — no module side effects. Exposed for unit tests; the app uses
+ * Pure resolver — no module side effects. Exposed for tests; the app uses
  * the `ENV` singleton below.
  */
 export function resolveEnvironment(source: NodeJS.ProcessEnv = process.env): AppEnvironment {
@@ -113,28 +103,18 @@ export function resolveEnvironment(source: NodeJS.ProcessEnv = process.env): App
   }
 
   const raw = parsed.data;
-  const mode: ApiMode = raw.API_MODE;
   const env: ApiEnv = raw.API_ENV;
   const profile = ENVIRONMENTS[env];
 
   const override = raw.BASE_URL !== undefined && raw.BASE_URL !== '' ? raw.BASE_URL : undefined;
-
-  const mockPort = raw.MOCK_PORT ?? MOCK_DEFAULTS.port;
-  const mockAdminKey = raw.MOCK_ADMIN_KEY ?? MOCK_DEFAULTS.adminKey;
-
-  let baseUrl: string;
-  if (mode === 'mock') {
-    baseUrl = `http://127.0.0.1:${mockPort}`;
-  } else {
-    const candidate = override ?? (profile.baseUrl !== '' ? profile.baseUrl : undefined);
-    if (candidate === undefined) {
-      throw new ConfigurationError(
-        `API_MODE=real with API_ENV=${env} requires a base URL. ` +
-          `Provide BASE_URL (workflow input or repository/environment variable) or set the profile baseUrl in config/environments.ts.`,
-      );
-    }
-    baseUrl = assertHttpUrl(candidate, 'BASE_URL');
+  const candidate = override ?? (profile.baseUrl !== '' ? profile.baseUrl : undefined);
+  if (candidate === undefined) {
+    throw new ConfigurationError(
+      `API_ENV=${env} requires a base URL. Provide BASE_URL (workflow input or repository/environment variable) ` +
+        `or set the profile baseUrl in config/environments.ts.`,
+    );
   }
+  const baseUrl = assertHttpUrl(candidate, 'BASE_URL');
 
   const hasUsername = raw.API_USERNAME !== undefined;
   const hasPassword = raw.API_PASSWORD !== undefined;
@@ -142,7 +122,7 @@ export function resolveEnvironment(source: NodeJS.ProcessEnv = process.env): App
     throw new ConfigurationError('API_USERNAME and API_PASSWORD must be provided together');
   }
 
-  const allowPublicDefaults = mode === 'mock' || env === 'prod';
+  const allowPublicDefaults = env === 'prod';
   const credentials: Credentials = {
     username: raw.API_USERNAME ?? (allowPublicDefaults ? PUBLIC_SANDBOX_CREDENTIALS.username : ''),
     password: raw.API_PASSWORD ?? (allowPublicDefaults ? PUBLIC_SANDBOX_CREDENTIALS.password : ''),
@@ -150,25 +130,20 @@ export function resolveEnvironment(source: NodeJS.ProcessEnv = process.env): App
 
   if (credentials.username === '' || credentials.password === '') {
     throw new ConfigurationError(
-      `API_MODE=real with API_ENV=${env} requires API_USERNAME and API_PASSWORD (environment-scoped secrets).`,
+      `API_ENV=${env} requires API_USERNAME and API_PASSWORD (environment-scoped secrets).`,
     );
   }
 
   const requestedWorkers = raw.WORKERS ?? DEFAULT_WORKERS;
-  const workerCeiling = mode === 'mock' ? MAX_MOCK_WORKERS : profile.maxWorkers;
-  const workers = Math.min(requestedWorkers, workerCeiling);
+  const workers = Math.min(requestedWorkers, profile.maxWorkers);
 
-  const isPublicSandbox =
-    mode === 'real' && baseUrl === assertHttpUrl(ENVIRONMENTS.prod.baseUrl, 'prod baseUrl');
+  const isPublicSandbox = baseUrl === assertHttpUrl(ENVIRONMENTS.prod.baseUrl, 'prod baseUrl');
   const runBehaviourTests = raw.RUN_BEHAVIOUR_TESTS === 'true' || isPublicSandbox;
 
   return Object.freeze({
-    mode,
     env,
     profile,
     baseUrl,
-    mockPort,
-    mockAdminKey,
     credentials: Object.freeze(credentials),
     workers,
     requestedWorkers,
@@ -176,7 +151,6 @@ export function resolveEnvironment(source: NodeJS.ProcessEnv = process.env): App
     tokenTtlMs: raw.TOKEN_TTL_MS ?? DEFAULT_TOKEN_TTL_MS,
     logLevel: raw.LOG_LEVEL ?? 'info',
     isCi: raw.CI === 'true' || raw.CI === '1',
-    isMock: mode === 'mock',
     runId: RUN_ID,
     runBehaviourTests,
   });
@@ -187,8 +161,5 @@ export const ENV: AppEnvironment = resolveEnvironment();
 
 /** Short, secret-free description for logs and the Allure environment block. */
 export function describeTarget(environment: AppEnvironment = ENV): string {
-  if (environment.mode === 'mock') {
-    return `mock (${environment.baseUrl})`;
-  }
   return `${environment.env} (${environment.baseUrl})`;
 }
