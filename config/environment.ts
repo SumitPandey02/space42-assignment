@@ -39,6 +39,23 @@ const optionalInt = (min: number, max: number) =>
 /** CI secrets render as an empty string when unset; treat that as absent. */
 const optionalText = (schema: z.ZodString) => z.preprocess(emptyToUndefined, schema.optional());
 
+const optionalBoolean = z.preprocess((value: unknown) => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === '') {
+    return undefined;
+  }
+  if (normalized === 'true' || normalized === '1') {
+    return true;
+  }
+  if (normalized === 'false' || normalized === '0') {
+    return false;
+  }
+  return value;
+}, z.boolean().optional());
+
 const rawEnvironmentSchema = z.object({
   BASE_URL: optionalText(z.string().trim().min(1)),
   API_USERNAME: optionalText(z.string().trim().min(1)),
@@ -47,12 +64,21 @@ const rawEnvironmentSchema = z.object({
   REQUEST_TIMEOUT_MS: optionalInt(1_000, 120_000),
   TOKEN_TTL_MS: optionalInt(1_000, 86_400_000),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).optional(),
+  API_LOGGING_ENABLED: optionalBoolean,
+  API_LOG_REQUEST_BODY: optionalBoolean,
+  API_LOG_RESPONSE_BODY: optionalBoolean,
   CI: z.string().optional(),
 });
 
 export interface Credentials {
   readonly username: string;
   readonly password: string;
+}
+
+export interface ApiLoggingConfig {
+  readonly enabled: boolean;
+  readonly requestBody: boolean;
+  readonly responseBody: boolean;
 }
 
 export interface AppEnvironment {
@@ -63,6 +89,7 @@ export interface AppEnvironment {
   readonly requestTimeoutMs: number;
   readonly tokenTtlMs: number;
   readonly logLevel: LogLevel;
+  readonly apiLogging: ApiLoggingConfig;
   readonly isCi: boolean;
   readonly runId: string;
 }
@@ -111,6 +138,11 @@ export function resolveEnvironment(source: NodeJS.ProcessEnv = process.env): App
     requestTimeoutMs: raw.REQUEST_TIMEOUT_MS ?? DEFAULT_REQUEST_TIMEOUT_MS,
     tokenTtlMs: raw.TOKEN_TTL_MS ?? DEFAULT_TOKEN_TTL_MS,
     logLevel: raw.LOG_LEVEL ?? 'info',
+    apiLogging: Object.freeze({
+      enabled: raw.API_LOGGING_ENABLED ?? true,
+      requestBody: raw.API_LOG_REQUEST_BODY ?? true,
+      responseBody: raw.API_LOG_RESPONSE_BODY ?? true,
+    }),
     isCi: raw.CI === 'true' || raw.CI === '1',
     runId: RUN_ID,
   });

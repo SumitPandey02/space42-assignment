@@ -45,6 +45,7 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck
+      - run: npm run test:logging
 
   sandbox:
     name: Public sandbox (${{ github.event_name == 'schedule' && 'full' || github.event.inputs.scope || 'smoke' }})

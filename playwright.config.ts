@@ -44,5 +44,11 @@ export default defineConfig({
       name: 'core',
       testMatch: /tests\/(booking|auth|resilience|contracts)\/.*\.spec\.ts/,
     },
+    {
+      name: 'logging',
+      testMatch: /tests\/logging\/.*\.spec\.ts/,
+      fullyParallel: true,
+      retries: 0,
+    },
   ],
 });

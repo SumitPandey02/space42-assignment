@@ -23,6 +23,8 @@ export interface Logger {
   info(message: string, context?: Record<string, unknown>): void;
   warn(message: string, context?: Record<string, unknown>): void;
   error(message: string, context?: Record<string, unknown>): void;
+  /** Write a pre-sanitised multiline block without the JSON-lines envelope. */
+  block(message: string): void;
   child(scope: string, context?: Record<string, unknown>): Logger;
 }
 
@@ -87,6 +89,9 @@ export function createLogger(scope: string, baseContext: Record<string, unknown>
     info: (message, context) => emit('info', scope, message, merged(context)),
     warn: (message, context) => emit('warn', scope, message, merged(context)),
     error: (message, context) => emit('error', scope, message, merged(context)),
+    block: (message) => {
+      console.log(message);
+    },
     child: (childScope, context) => createLogger(`${scope}.${childScope}`, merged(context)),
   };
 }
