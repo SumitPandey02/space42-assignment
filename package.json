@@ -22,7 +22,6 @@
     "test:api": "playwright test --project=core",
     "test:smoke": "playwright test --grep @smoke",
     "test:concurrency": "playwright test --grep @concurrency",
-    "test:logging": "playwright test --project=logging",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

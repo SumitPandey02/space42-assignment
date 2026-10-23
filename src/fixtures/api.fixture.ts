@@ -24,7 +24,6 @@ import { AuthClient } from '../clients/auth.client';
 import { BookingClient } from '../clients/booking.client';
 import { HttpTransport } from '../clients/http-client';
 import type { BookingCreateInput, BookingResponse } from '../contracts/booking.schema';
-import { createApiExchangeLogger } from '../reporting/api-exchange-logger';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('fixtures');
@@ -55,7 +54,6 @@ function createTransport(context: APIRequestContext): HttpTransport {
     baseUrl: ENV.baseUrl,
     requestTimeoutMs: ENV.requestTimeoutMs,
     logger,
-    exchangeLogger: createApiExchangeLogger(ENV.apiLogging, logger),
   });
 }
 

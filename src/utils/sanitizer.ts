@@ -21,7 +21,6 @@ const SENSITIVE_FRAGMENTS = [
   'apikey',
   'session',
   'credential',
-  'jwt',
 ] as const;
 
 function normalizeKey(key: string): string {
@@ -41,7 +40,6 @@ export function isSensitiveKey(key: string): boolean {
 export function redactSecretsInString(input: string): string {
   return input
     .replaceAll(/(Bearer)\s+[A-Za-z0-9._~+/-]+=*/gi, `$1 ${REDACTED}`)
-    .replaceAll(/\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*=*/g, REDACTED)
     .replaceAll(
       /((?:token|password|passwd|secret|authorization|cookie|api[-_]?key)"?\s*[=:]\s*)("?)[^"&;,\s]+/gi,
       `$1$2${REDACTED}`,
@@ -79,11 +77,8 @@ export function redact(value: unknown, depth = 0, seen: WeakSet<object> = new We
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : value.toString();
   }
-  if (typeof value === 'boolean') {
+  if (typeof value === 'boolean' || typeof value === 'bigint') {
     return value;
-  }
-  if (typeof value === 'bigint') {
-    return value.toString();
   }
   if (typeof value === 'function') {
     return '[Function]';
@@ -159,10 +154,6 @@ export function redactHeaders(headers: Record<string, string | undefined>): Reco
 export function redactUrl(rawUrl: string): string {
   try {
     const url = new URL(rawUrl);
-    if (url.username !== '' || url.password !== '') {
-      url.username = '';
-      url.password = '';
-    }
     for (const key of [...url.searchParams.keys()]) {
       if (isSensitiveKey(key)) {
         url.searchParams.set(key, REDACTED);

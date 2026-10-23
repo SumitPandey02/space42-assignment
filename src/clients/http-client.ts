@@ -14,16 +14,8 @@
  * already have happened.
  */
 
-import { randomUUID } from 'node:crypto';
-
 import type { APIRequestContext } from '@playwright/test';
 
-import type { ApiExchangeLogger } from '../reporting/api-exchange-logger';
-import type {
-  ApiExchangeOutcome,
-  ApiRequestSnapshot,
-  ApiResponseSnapshot,
-} from '../reporting/api-exchange-format';
 import {
   ApiError,
   AuthenticationError,
@@ -33,7 +25,7 @@ import {
 } from '../utils/errors';
 import type { Logger } from '../utils/logger';
 import { retry, type RetryOptions } from '../utils/retry';
-import { redact, redactHeaders, redactSecretsInString, redactUrl } from '../utils/sanitizer';
+import { redact, redactHeaders, redactUrl } from '../utils/sanitizer';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -80,21 +72,16 @@ export interface RawResponse {
 }
 
 export interface HttpExchange {
-  readonly correlationId: string;
   readonly method: HttpMethod;
   readonly url: string;
   readonly requestHeaders: Record<string, string>;
   readonly requestBody: unknown;
   readonly status: number;
-  readonly statusText?: string;
   readonly responseHeaders: Record<string, string>;
   readonly responseBody: unknown;
   readonly durationMs: number;
   readonly attempt: number;
-  readonly maxAttempts: number;
   readonly startedAt: string;
-  readonly finishedAt: string;
-  readonly outcome: ApiExchangeOutcome;
   readonly networkError?: string;
 }
 
@@ -103,7 +90,6 @@ export interface HttpTransportOptions {
   readonly requestTimeoutMs: number;
   readonly defaultRetry?: HttpRetryPolicy;
   readonly logger: Logger;
-  readonly exchangeLogger: ApiExchangeLogger;
 }
 
 function parseJsonBody(text: string): unknown {
@@ -142,7 +128,6 @@ export class HttpTransport {
   private readonly defaultRetry: HttpRetryPolicy;
   private readonly requestTimeoutMs: number;
   private readonly logger: Logger;
-  private readonly exchangeLogger: ApiExchangeLogger;
   private readonly history: HttpExchange[] = [];
 
   constructor(
@@ -153,7 +138,6 @@ export class HttpTransport {
     this.defaultRetry = options.defaultRetry ?? DEFAULT_RETRY_POLICY;
     this.requestTimeoutMs = options.requestTimeoutMs;
     this.logger = options.logger.child('http');
-    this.exchangeLogger = options.exchangeLogger;
   }
 
   get exchanges(): readonly HttpExchange[] {
@@ -178,7 +162,6 @@ export class HttpTransport {
    */
   async send(spec: RequestSpec): Promise<RawResponse> {
     const policy = this.defaultRetry;
-    const maxAttempts = Math.max(1, Math.floor(policy.retries) + 1);
     const url = this.resolveUrl(spec.path, spec.query);
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -206,7 +189,7 @@ export class HttpTransport {
 
     try {
       return await retry(async (attempt) => {
-        const response = await this.execute(spec, url, headers, attempt, maxAttempts);
+        const response = await this.execute(spec, url, headers, attempt);
         if (RETRYABLE_STATUS_CODES.has(response.status)) {
           throw new RetryableStatusError(response);
         }
@@ -240,24 +223,9 @@ export class HttpTransport {
     url: string,
     headers: Record<string, string>,
     attempt: number,
-    maxAttempts: number,
   ): Promise<RawResponse> {
     const startedAt = new Date().toISOString();
     const started = performance.now();
-    const correlationId = randomUUID();
-    const request: ApiRequestSnapshot = {
-      correlationId,
-      startedAt,
-      method: spec.method,
-      url,
-      headers,
-      ...(spec.body === undefined ? {} : { body: spec.body }),
-      attempt,
-      maxAttempts,
-      ...(spec.operation === undefined ? {} : { operation: spec.operation }),
-    };
-
-    this.exchangeLogger.logRequest(request);
 
     let response: Awaited<ReturnType<APIRequestContext['fetch']>>;
     try {
@@ -270,23 +238,8 @@ export class HttpTransport {
       });
     } catch (error) {
       const durationMs = Math.round(performance.now() - started);
-      const finishedAt = new Date().toISOString();
-      const message = redactSecretsInString(error instanceof Error ? error.message : String(error));
-      const responseSnapshot: ApiResponseSnapshot = {
-        correlationId,
-        finishedAt,
-        status: 0,
-        headers: {},
-        durationMs,
-        attempt,
-        maxAttempts,
-        outcome: 'network-error',
-        error: redactSecretsInString(message),
-      };
-
-      await this.exchangeLogger.logResponse(request, responseSnapshot);
+      const message = error instanceof Error ? error.message : String(error);
       this.record({
-        correlationId,
         method: spec.method,
         url,
         requestHeaders: headers,
@@ -296,29 +249,22 @@ export class HttpTransport {
         responseBody: undefined,
         durationMs,
         attempt,
-        maxAttempts,
         startedAt,
-        finishedAt,
-        outcome: 'network-error',
         networkError: message,
       });
       throw new HttpRequestError({
         method: spec.method,
         url: redactUrl(url),
-        message: redactSecretsInString(message),
+        message,
         cause: error,
       });
     }
 
     const durationMs = Math.round(performance.now() - started);
-    const finishedAt = new Date().toISOString();
     const text = await response.text();
     const status = response.status();
-    const statusText = response.statusText();
     const responseHeaders = response.headers();
     const json = parseJsonBody(text);
-    const responseBody = json === undefined ? (text.trim() === '' ? undefined : text) : json;
-    const outcome: ApiExchangeOutcome = status >= 200 && status < 300 ? 'success' : 'http-error';
 
     const result: RawResponse = {
       method: spec.method,
@@ -331,47 +277,25 @@ export class HttpTransport {
       durationMs,
     };
 
-    const responseSnapshot: ApiResponseSnapshot = {
-      correlationId,
-      finishedAt,
-      status,
-      ...(statusText === '' ? {} : { statusText }),
-      headers: responseHeaders,
-      ...(responseBody === undefined ? {} : { body: responseBody }),
-      durationMs,
-      attempt,
-      maxAttempts,
-      outcome,
-    };
-
-    await this.exchangeLogger.logResponse(request, responseSnapshot);
     this.record({
-      correlationId,
       method: spec.method,
       url,
       requestHeaders: headers,
       requestBody: spec.body,
       status,
-      ...(statusText === '' ? {} : { statusText }),
       responseHeaders,
-      responseBody,
+      responseBody: json ?? text,
       durationMs,
       attempt,
-      maxAttempts,
       startedAt,
-      finishedAt,
-      outcome,
     });
 
     this.logger.debug('http exchange', {
-      correlationId,
       method: spec.method,
       url: redactUrl(url),
       status,
       durationMs,
       attempt,
-      maxAttempts,
-      outcome,
     });
 
     return result;
@@ -385,9 +309,6 @@ export class HttpTransport {
       requestBody: redact(exchange.requestBody),
       responseHeaders: redactHeaders(exchange.responseHeaders),
       responseBody: redact(exchange.responseBody),
-      ...(exchange.networkError === undefined
-        ? {}
-        : { networkError: redactSecretsInString(exchange.networkError) }),
     });
 
     if (this.history.length > MAX_HISTORY_ENTRIES) {
