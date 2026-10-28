@@ -45,7 +45,7 @@ const rawEnvironmentSchema = z.object({
   API_PASSWORD: optionalText(z.string().min(1)),
   WORKERS: optionalInt(1, 64),
   REQUEST_TIMEOUT_MS: optionalInt(1_000, 120_000),
-  TOKEN_TTL_MS: optionalInt(1_000,4_000),
+  TOKEN_TTL_MS: optionalInt(1_000, 4_000),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).optional(),
   CI: z.string().optional(),
 });
