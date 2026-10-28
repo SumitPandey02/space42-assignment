@@ -11,7 +11,7 @@
  */
 
 import { config as loadDotenv } from 'dotenv';
-import { z } from 'zod';
+import { number, z } from 'zod';
 
 import { ConfigurationError } from '../src/utils/errors';
 import type { LogLevel } from '../src/utils/logger';
@@ -28,7 +28,7 @@ const PUBLIC_SANDBOX_CREDENTIALS = Object.freeze({
 const DEFAULT_WORKERS = 4;
 const MAX_WORKERS = 4;
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
-const DEFAULT_TOKEN_TTL_MS = 11000;
+const DEFAULT_TOKEN_TTL_MS = 2_000;
 
 const emptyToUndefined = (value: unknown): unknown =>
   typeof value === 'string' && value.trim() === '' ? undefined : value;
@@ -45,7 +45,7 @@ const rawEnvironmentSchema = z.object({
   API_PASSWORD: optionalText(z.string().min(1)),
   WORKERS: optionalInt(1, 64),
   REQUEST_TIMEOUT_MS: optionalInt(1_000, 120_000),
-  TOKEN_TTL_MS: optionalInt(1_000, 4000),
+  TOKEN_TTL_MS: optionalInt(1_000,4_000),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).optional(),
   CI: z.string().optional(),
 });
