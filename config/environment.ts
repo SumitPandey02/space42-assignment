@@ -28,7 +28,7 @@ const PUBLIC_SANDBOX_CREDENTIALS = Object.freeze({
 const DEFAULT_WORKERS = 4;
 const MAX_WORKERS = 4;
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
-const DEFAULT_TOKEN_TTL_MS = 600_000;
+const DEFAULT_TOKEN_TTL_MS = 11000;
 
 const emptyToUndefined = (value: unknown): unknown =>
   typeof value === 'string' && value.trim() === '' ? undefined : value;
@@ -45,7 +45,7 @@ const rawEnvironmentSchema = z.object({
   API_PASSWORD: optionalText(z.string().min(1)),
   WORKERS: optionalInt(1, 64),
   REQUEST_TIMEOUT_MS: optionalInt(1_000, 120_000),
-  TOKEN_TTL_MS: optionalInt(1_000, 86_400_000),
+  TOKEN_TTL_MS: optionalInt(1_000, 4000),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).optional(),
   CI: z.string().optional(),
 });
